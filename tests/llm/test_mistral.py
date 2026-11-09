@@ -13,6 +13,14 @@
 
 import os
 from unittest.mock import patch, MagicMock
+
+from mistralai.client.models import (
+    AssistantMessage,
+    ChatCompletionChoice,
+    ChatCompletionResponse,
+    UsageInfo,
+)
+
 from dapr_agents.llm.mistral.chat import MistralChatClient
 
 
@@ -32,20 +40,20 @@ def test_mistral_generate(mock_mistral_class):
     mock_instance = MagicMock()
     mock_mistral_class.return_value = mock_instance
 
-    mock_message = MagicMock()
-    mock_message.role = "assistant"
-    mock_message.content = "Hello from Mistral"
-
-    mock_choice = MagicMock()
-    mock_choice.index = 0
-    mock_choice.message = mock_message
-    mock_choice.finish_reason = "stop"
-
-    mock_resp = MagicMock()
-    mock_resp.id = "test-mistral-id"
-    mock_resp.model = "mistral-large-latest"
-    mock_resp.choices = [mock_choice]
-    mock_resp.usage = None
+    mock_resp = ChatCompletionResponse(
+        id="test-mistral-id",
+        object="chat.completion",
+        model="mistral-large-latest",
+        created=0,
+        usage=UsageInfo(prompt_tokens=3, completion_tokens=4, total_tokens=7),
+        choices=[
+            ChatCompletionChoice(
+                index=0,
+                finish_reason="stop",
+                message=AssistantMessage(content="Hello from Mistral"),
+            )
+        ],
+    )
 
     mock_instance.chat.complete.return_value = mock_resp
 
@@ -53,6 +61,8 @@ def test_mistral_generate(mock_mistral_class):
     response = client.generate("Say hello")
 
     assert response.get_message().content == "Hello from Mistral"
+    assert response.metadata["provider"] == "mistral"
+    assert response.metadata["usage"]["total_tokens"] == 7
     mock_instance.chat.complete.assert_called_once()
 
 

@@ -321,6 +321,7 @@ class StructureHandler:
                 "iflytek",
                 "anthropic",
                 "claude",
+                "mistral",
             ):
                 if structured_mode == "function_call":
                     tool_calls = getattr(message, "tool_calls", None)

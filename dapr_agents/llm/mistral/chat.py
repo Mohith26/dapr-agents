@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from dapr_agents.llm.chat import ChatClientBase
 from dapr_agents.llm.mistral.client import MistralClientBase
-from dapr_agents.llm.utils import RequestHandler
+from dapr_agents.llm.utils import RequestHandler, ResponseHandler
 from dapr_agents.prompt.base import PromptTemplateBase
 from dapr_agents.prompt.prompty import Prompty
 from dapr_agents.tool import AgentTool
@@ -139,14 +139,35 @@ class MistralChatClient(MistralClientBase, ChatClientBase):
     ) -> Union[
         Iterator[LLMChatCandidateChunk], LLMChatResponse, BaseModel, List[BaseModel]
     ]:
+        """
+        Issue a Mistral chat completion.
 
-        if stream:
-            raise NotImplementedError(
-                "Streaming is not yet supported for the Mistral provider."
-            )
-        if tools or response_format:
-            raise NotImplementedError(
-                "Tools and structured output are not yet supported for the Mistral provider."
+        Supports tool calling, structured output and streaming:
+
+        - `tools` are sent as OpenAI-style function tools, and tool calls in the
+          response are returned on the assistant message (arguments as JSON
+          strings), so Mistral can drive tool-using agents.
+        - `response_format` with `structured_mode="json"` uses Mistral's native
+          `json_schema` response format; `structured_mode="function_call"`
+          forces a single tool call whose arguments are validated against the
+          model.
+        - `stream=True` returns an iterator of `LLMChatResponseChunk`s that
+          follows the same chunk contract as the other providers, including
+          token usage on the final chunk.
+
+        Args:
+            messages:        pre-built messages or None to use `input_data`.
+            input_data:      variables for the prompt template.
+            model:           override the client's default model.
+            tools:           list of AgentTool or dict specs.
+            response_format: Pydantic model (or list thereof) for structured output.
+            structured_mode: "json" or "function_call" (non-stream only).
+            stream:          if True, return an iterator of chunks.
+            **kwargs:        any other Mistral chat parameters (temperature, ...).
+        """
+        if structured_mode not in self.SUPPORTED_STRUCTURED_MODES:
+            raise ValueError(
+                f"structured_mode must be one of {self.SUPPORTED_STRUCTURED_MODES}"
             )
 
         if input_data:
@@ -164,29 +185,36 @@ class MistralChatClient(MistralClientBase, ChatClientBase):
             params.update(kwargs)
 
         params["model"] = model or self.model
+        params["stream"] = stream
+
+        params = RequestHandler.process_params(
+            params,
+            llm_provider=self.provider,
+            tools=tools,
+            response_format=response_format,
+            structured_mode=structured_mode,
+        )
         params = RequestHandler.make_params_json_serializable(params)
+        # The Mistral SDK exposes separate methods for streaming and
+        # non-streaming calls, so `stream` selects the method instead of being
+        # sent as a parameter.
+        params.pop("stream", None)
 
         try:
-            logger.info("Calling Mistral ChatCompletion...")
-            resp = self.client.chat.complete(**params)
-
-            return LLMChatResponse(
-                id=resp.id,
-                model=resp.model,
-                results=[
-                    {
-                        "index": choice.index,
-                        "message": {
-                            "role": choice.message.role,
-                            "content": choice.message.content,
-                        },
-                        "finish_reason": choice.finish_reason,
-                    }
-                    for choice in resp.choices
-                ],
-                usage=resp.usage.model_dump() if getattr(resp, "usage", None) else None,
-            )
-
+            if stream:
+                logger.info("Calling Mistral chat stream...")
+                resp = self.client.chat.stream(**params)
+            else:
+                logger.info("Calling Mistral ChatCompletion...")
+                resp = self.client.chat.complete(**params)
         except Exception as e:
             logger.error("Mistral API error", exc_info=True)
             raise ValueError(f"Mistral API error: {e}") from e
+
+        return ResponseHandler.process_response(
+            response=resp,
+            llm_provider=self.provider,
+            response_format=response_format,
+            structured_mode=structured_mode,
+            stream=stream,
+        )

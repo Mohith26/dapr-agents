@@ -142,6 +142,7 @@ def test_providers_with_streaming_contains_all_supported():
         "claude",
         "huggingface",
         "iflytek",
+        "mistral",
     }
     assert set(PROVIDERS_WITH_STREAMING) == expected
 

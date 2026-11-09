@@ -378,6 +378,14 @@ class StreamHandler:
                     enrich_metadata={"provider": provider},
                     on_chunk=on_chunk,
                 )
+            elif provider == "mistral":
+                from dapr_agents.llm.mistral.utils import process_mistral_stream
+
+                yield from process_mistral_stream(
+                    raw_stream=s,
+                    enrich_metadata={"provider": provider},
+                    on_chunk=on_chunk,
+                )
             elif provider in ("anthropic", "claude"):
                 from dapr_agents.llm.anthropic.utils import process_anthropic_stream
 

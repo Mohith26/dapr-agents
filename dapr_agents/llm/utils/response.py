@@ -103,6 +103,12 @@ class ResponseHandler:
                 from dapr_agents.llm.dapr.utils import process_dapr_chat_response
 
                 llm_resp = process_dapr_chat_response(response)
+            elif provider == "mistral":
+                from dapr_agents.llm.mistral.utils import (
+                    to_llm_chat_response as mistral_to_llm_chat_response,
+                )
+
+                llm_resp = mistral_to_llm_chat_response(response)
             elif provider in ("anthropic", "claude"):
                 from dapr_agents.llm.anthropic.utils import to_llm_chat_response
 
